@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 	"log"
-	"github.com/jc3wish/Bifrost/Bristol/mysql"
+	"github.com/jc3wish/Bristol/mysql"
 	"database/sql/driver"
 	"strings"
 	"strconv"
@@ -332,7 +332,7 @@ func main() {
 	port := flag.String("P", "3306", "-P")
 	conndb := flag.String("conndb", "test", "-conndb")
 	table := flag.String("table", "bristol_performance_test", "-table")
-	schema := flag.String("schema", "bifrost_test", "-schema")
+	schema := flag.String("schema", "jc3wish_test", "-schema")
 	count = flag.Int("count", 100000, "-count")
 	onlydata := flag.String("onlydata", "false", "-onlydata")
 	master_log_file := flag.String("master_log_file", "", "-master_log_file")

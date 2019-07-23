@@ -59,6 +59,7 @@ func (parser *eventParser) parseEvent(data []byte) (event *EventReslut, filename
 	}
 
 	filename = parser.binlogFileName
+	//log.Println("EventType:",EventType(data[4]))
 	switch EventType(data[4]) {
 	case HEARTBEAT_EVENT,IGNORABLE_EVENT,GTID_EVENT,ANONYMOUS_GTID_EVENT,PREVIOUS_GTIDS_EVENT:
 		return
@@ -116,6 +117,7 @@ func (parser *eventParser) parseEvent(data []byte) (event *EventReslut, filename
 		var table_map_event *TableMapEvent
 		table_map_event, err = parser.parseTableMapEvent(buf)
 		parser.tableMap[table_map_event.tableId] = table_map_event
+		//log.Println("table_map_event:",*table_map_event,"tableId:",table_map_event.tableId," schemaName:",table_map_event.schemaName," tableName:",table_map_event.tableName)
 		if _, ok := parser.tableSchemaMap[table_map_event.tableId]; !ok {
 			parser.GetTableSchema(table_map_event.tableId, table_map_event.schemaName, table_map_event.tableName)
 		}
@@ -189,7 +191,7 @@ func (parser *eventParser) GetTableSchemaByName(tableId uint64, database string,
 	}
 	//set dbAndTable Name tableId
 	parser.tableNameMap[database+"."+tablename] = tableId
-	sql := "SELECT COLUMN_NAME,COLUMN_KEY,COLUMN_TYPE,CHARACTER_SET_NAME,COLLATION_NAME,NUMERIC_SCALE,EXTRA FROM information_schema.columns WHERE table_schema='" + database + "' AND table_name='" + tablename + "' ORDER BY `ORDINAL_POSITION` ASC"
+	sql := "SELECT COLUMN_NAME,COLUMN_KEY,COLUMN_TYPE,CHARACTER_SET_NAME,COLLATION_NAME,NUMERIC_SCALE,EXTRA,COLUMN_DEFAULT,DATA_TYPE FROM information_schema.columns WHERE table_schema='" + database + "' AND table_name='" + tablename + "' ORDER BY `ORDINAL_POSITION` ASC"
 	stmt, err := parser.conn.Prepare(sql)
 	p := make([]driver.Value, 0)
 	rows, err := stmt.Query(p)
@@ -197,8 +199,9 @@ func (parser *eventParser) GetTableSchemaByName(tableId uint64, database string,
 		errs = err
 		return
 	}
+	parser.tableSchemaMap[tableId] = make([]*column_schema_type,0)
 	for {
-		dest := make([]driver.Value, 7, 7)
+		dest := make([]driver.Value, 9, 9)
 		err := rows.Next(dest)
 		if err != nil {
 			break
@@ -210,14 +213,43 @@ func (parser *eventParser) GetTableSchemaByName(tableId uint64, database string,
 		var is_primary bool = false
 		var auto_increment bool = false
 		var enum_values, set_values []string
+		var COLUMN_DEFAULT	string
+		var DATA_TYPE string
 
 		COLUMN_NAME = string(dest[0].([]byte))
 		COLUMN_KEY = string(dest[1].([]byte))
 		COLUMN_TYPE = string(dest[2].([]byte))
-		CHARACTER_SET_NAME = string(dest[3].([]byte))
-		COLLATION_NAME = string(dest[4].([]byte))
-		NUMERIC_SCALE = string(dest[5].([]byte))
+		if dest[3] == nil{
+			CHARACTER_SET_NAME = "NULL"
+		}else{
+			CHARACTER_SET_NAME = string(dest[3].([]byte))
+		}
+
+		if dest[4] == nil{
+			COLLATION_NAME = "NULL"
+		}else{
+			COLLATION_NAME = string(dest[4].([]byte))
+		}
+
+		if dest[5] == nil{
+			NUMERIC_SCALE = "NULL"
+		}else{
+			NUMERIC_SCALE = string(dest[5].([]byte))
+		}
+
 		EXTRA = string(dest[6].([]byte))
+
+		DATA_TYPE = string(dest[8].([]byte))
+
+		//bit类型这个地方比较特殊，不能直接转成string，并且当前只有 time,datetime 类型转换的时候会用到 默认值，这里不进行其他细节处理
+		if DATA_TYPE != "bit"{
+			if dest[7] == nil{
+				COLUMN_DEFAULT = "NULL"
+			}else{
+				COLUMN_DEFAULT = string(dest[7].([]byte))
+			}
+		}
+
 		if COLUMN_TYPE == "tinyint(1)"{
 			isBool = true
 		}
@@ -231,7 +263,7 @@ func (parser *eventParser) GetTableSchemaByName(tableId uint64, database string,
 			is_primary = true
 		}
 
-		if COLUMN_TYPE[0:4] == "enum" {
+		if DATA_TYPE == "enum" {
 			d := strings.Replace(COLUMN_TYPE, "enum(", "", -1)
 			d = strings.Replace(d, ")", "", -1)
 			d = strings.Replace(d, "'", "", -1)
@@ -240,7 +272,7 @@ func (parser *eventParser) GetTableSchemaByName(tableId uint64, database string,
 			enum_values = make([]string, 0)
 		}
 
-		if COLUMN_TYPE[0:3] == "set" {
+		if DATA_TYPE == "set" {
 			d := strings.Replace(COLUMN_TYPE, "set(", "", -1)
 			d = strings.Replace(d, ")", "", -1)
 			d = strings.Replace(d, "'", "", -1)
@@ -261,6 +293,8 @@ func (parser *eventParser) GetTableSchemaByName(tableId uint64, database string,
 			CHARACTER_SET_NAME:CHARACTER_SET_NAME,
 			COLLATION_NAME:COLLATION_NAME,
 			NUMERIC_SCALE:NUMERIC_SCALE,
+			COLUMN_DEFAULT:COLUMN_DEFAULT,
+			DATA_TYPE:DATA_TYPE,
 		})
 	}
 	rows.Close()
@@ -268,7 +302,7 @@ func (parser *eventParser) GetTableSchemaByName(tableId uint64, database string,
 	return
 }
 
-func (parser *eventParser) GetConnectionInfo(connectionId string) (m map[string]string){
+func (parser *eventParser) GetConnectionInfo(connectionId string) (m map[string]string,e error){
 	parser.connLock.Lock()
 	defer func() {
 		if err := recover(); err != nil {
@@ -276,12 +310,10 @@ func (parser *eventParser) GetConnectionInfo(connectionId string) (m map[string]
 				parser.connStatus = 0
 				parser.conn.Close()
 			}
-			parser.connLock.Unlock()
 			log.Println("binlog.go GetConnectionInfo err:",err)
 			m = nil
-		}else{
-			parser.connLock.Unlock()
 		}
+		parser.connLock.Unlock()
 	}()
 	if parser.connStatus == 0 {
 		parser.initConn()
@@ -291,7 +323,7 @@ func (parser *eventParser) GetConnectionInfo(connectionId string) (m map[string]
 	p := make([]driver.Value, 0)
 	rows, err := stmt.Query(p)
 	if err != nil {
-		return nil
+		return nil,err
 	}
 	m = make(map[string]string,2)
 	for {
@@ -304,7 +336,7 @@ func (parser *eventParser) GetConnectionInfo(connectionId string) (m map[string]
 		m["STATE"]=string(dest[1].([]byte))
 		break
 	}
-	return
+	return m,nil
 }
 
 
@@ -317,18 +349,15 @@ func (parser *eventParser) KillConnect(connectionId string) (b bool){
 				parser.connStatus = 0
 				parser.conn.Close()
 			}
-			parser.connLock.Unlock()
 			b = false
-		}else{
-			parser.connLock.Unlock()
 		}
+		parser.connLock.Unlock()
 	}()
 	if parser.connStatus == 0 {
 		parser.initConn()
 	}
 	sql := "kill "+connectionId
-	p := make([]driver.Value, 0)
-	_, err := parser.conn.Exec(sql,p)
+	_, err := parser.conn.Exec(sql,[]driver.Value{})
 	if err != nil {
 		return false
 	}
@@ -368,7 +397,7 @@ func (parser *eventParser) GetQueryTableName(sql string) (string, string) {
 func (mc *mysqlConn) DumpBinlog(filename string, position uint32, parser *eventParser, callbackFun callback, result chan error) (driver.Rows, error) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println("DumpBinlog err:",err,313)
+			log.Println("DumpBinlog err:",err)
 			result <- fmt.Errorf(fmt.Sprint(err))
 			log.Println(string(debug.Stack()))
 			return
@@ -403,6 +432,7 @@ func (mc *mysqlConn) DumpBinlog(filename string, position uint32, parser *eventP
 		} else if pkt[0] == 254 { // EOF packet
 			result <- fmt.Errorf("EOF packet")
 			break
+			//continue
 		}
 		if pkt[0] == 0 {
 			event, _, e := parser.parseEvent(pkt[1:])
@@ -490,6 +520,7 @@ type BinlogDump struct {
 	CallbackFun   		callback
 	mysqlConn  			MysqlConnection
 	mysqlConnStatus 	int
+	checkSlaveStatus    bool
 }
 
 func (This *BinlogDump) GetBinlog()(string,uint32){
@@ -598,7 +629,7 @@ func (This *BinlogDump) startConnAndDumpBinlog(result chan error) {
 	}
 	result <- fmt.Errorf("running")
 	This.parser.connectionId = connectionId
-	//go This.checkDumpConnection(connectionId)
+	go This.checkDumpConnection()
 	//*** get connection id end
 
 	This.checksum_enabled()
@@ -620,35 +651,47 @@ func (This *BinlogDump) startConnAndDumpBinlog(result chan error) {
 		result <- fmt.Errorf("starting")
 		This.Status = "stop"
 	}
-	This.parser.KillConnect(This.parser.connectionId)
+	This.parser.KillConnect(connectionId)
 }
 
-func (This *BinlogDump) checkDumpConnection(connectionId string) {
+func (This *BinlogDump) checkDumpConnection() {
 	defer func() {
 		if err := recover();err !=nil{
 			log.Println("binlog.go checkDumpConnection err:",err)
 		}
+	}()
+	This.parser.connLock.Lock()
+	if This.checkSlaveStatus == true{
+		This.parser.connLock.Unlock()
+		return
+	}
+	This.checkSlaveStatus = true
+	This.parser.connLock.Unlock()
+	defer func() {
+		This.checkSlaveStatus = false
 	}()
 	for{
 		time.Sleep(9 * time.Second)
 		if This.parser.dumpBinLogStatus >= 2{
 			break
 		}
+		This.parser.connLock.Lock()
+		connectionId := This.parser.connectionId
+		This.parser.connLock.Unlock()
+
 		var m map[string]string
+		var e error
+
 		for i:=0;i<3;i++{
-			m = This.parser.GetConnectionInfo(connectionId)
-			if m == nil{
+			m,e = This.parser.GetConnectionInfo(connectionId)
+			if e != nil{
 				time.Sleep(2 * time.Second)
 				continue
 			}
 			break
 		}
+
 		//log.Println("GetConnectionInfo:",m)
-		This.parser.connLock.Lock()
-		if connectionId != This.parser.connectionId{
-			This.parser.connLock.Unlock()
-			break
-		}
 		if m == nil || m["TIME"] == ""{
 			log.Println("This.mysqlConn close ,connectionId: ",connectionId)
 			This.connLock.Lock()
@@ -659,7 +702,6 @@ func (This *BinlogDump) checkDumpConnection(connectionId string) {
 			This.connLock.Unlock()
 			break
 		}
-		This.parser.connLock.Unlock()
 	}
 }
 
