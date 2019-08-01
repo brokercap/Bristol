@@ -216,37 +216,37 @@ func (parser *eventParser) GetTableSchemaByName(tableId uint64, database string,
 		var COLUMN_DEFAULT	string
 		var DATA_TYPE string
 
-		COLUMN_NAME = string(dest[0].([]byte))
-		COLUMN_KEY = string(dest[1].([]byte))
-		COLUMN_TYPE = string(dest[2].([]byte))
+		COLUMN_NAME = dest[0].(string)
+		COLUMN_KEY = dest[1].(string)
+		COLUMN_TYPE = dest[2].(string)
 		if dest[3] == nil{
-			CHARACTER_SET_NAME = "NULL"
+			CHARACTER_SET_NAME = ""
 		}else{
-			CHARACTER_SET_NAME = string(dest[3].([]byte))
+			CHARACTER_SET_NAME = dest[3].(string)
 		}
 
 		if dest[4] == nil{
-			COLLATION_NAME = "NULL"
+			COLLATION_NAME = ""
 		}else{
-			COLLATION_NAME = string(dest[4].([]byte))
+			COLLATION_NAME = dest[4].(string)
 		}
 
 		if dest[5] == nil{
-			NUMERIC_SCALE = "NULL"
+			NUMERIC_SCALE = ""
 		}else{
-			NUMERIC_SCALE = string(dest[5].([]byte))
+			NUMERIC_SCALE = fmt.Sprint(dest[5])
 		}
 
-		EXTRA = string(dest[6].([]byte))
+		EXTRA = dest[6].(string)
 
-		DATA_TYPE = string(dest[8].([]byte))
+		DATA_TYPE = dest[8].(string)
 
 		//bit类型这个地方比较特殊，不能直接转成string，并且当前只有 time,datetime 类型转换的时候会用到 默认值，这里不进行其他细节处理
 		if DATA_TYPE != "bit"{
 			if dest[7] == nil{
-				COLUMN_DEFAULT = "NULL"
+				COLUMN_DEFAULT = ""
 			}else{
-				COLUMN_DEFAULT = string(dest[7].([]byte))
+				COLUMN_DEFAULT = dest[7].(string)
 			}
 		}
 
@@ -332,8 +332,8 @@ func (parser *eventParser) GetConnectionInfo(connectionId string) (m map[string]
 		if err != nil {
 			break
 		}
-		m["TIME"] = string(dest[0].([]byte))
-		m["STATE"]=string(dest[1].([]byte))
+		m["TIME"] = fmt.Sprint(dest[0])
+		m["STATE"]= dest[1].(string)
 		break
 	}
 	return m,nil
@@ -587,7 +587,7 @@ func (This *BinlogDump) checksum_enabled() {
 		}
 		return
 	}
-	if string(dest[1].([]byte)) != ""{
+	if dest[1].(string) != ""{
 		This.mysqlConn.Exec("set @master_binlog_checksum= @@global.binlog_checksum",p)
 		This.parser.binlog_checksum = true
 	}
@@ -620,7 +620,7 @@ func (This *BinlogDump) startConnAndDumpBinlog(result chan error) {
 		if err != nil {
 			break
 		}
-		connectionId = string(dest[0].([]byte))
+		connectionId = fmt.Sprint(dest[0])
 		break
 	}
 

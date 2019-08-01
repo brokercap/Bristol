@@ -18,52 +18,46 @@ func callback(data *mysql.EventReslut) {
 }
 
 func main() {
-	test1()
-	return
-	filename := "mysql-bin.000022"
-	var position uint32 = 13333
-	reslut := make(chan error, 1)
-	m := make(map[string]uint8, 0)
-	m["testdbcreate"] = 1
-	BinlogDump := &mysql.BinlogDump{
-		DataSource:    "root:root@tcp(127.0.0.1:3306)/test",
-		CallbackFun:   callback,
-		ReplicateDoDb: m,
-		OnlyEvent:     []mysql.EventType{mysql.QUERY_EVENT, mysql.WRITE_ROWS_EVENTv1, mysql.UPDATE_ROWS_EVENTv1, mysql.DELETE_ROWS_EVENTv1},
-	}
-	go BinlogDump.StartDumpBinlog(filename, position, 100,reslut,"",0)
-	go func() {
-		v := <-reslut
-		log.Printf("monitor reslut:%s \r\n", v)
-	}()
-	for {
-		time.Sleep(10 * time.Second)
-	}
-}
+	filename := "mysql-bin.000071"
 
-func test1()  {
-	filename := "mysql-bin.000004"
-	var position uint32 = 107
+	var position uint32 = 203785789
+	var DBsource = ""
+
+	//89
+
+	DBsource = "root:root123@tcp(10.40.6.89:3306)/test"
+	filename = "mysql-bin.000078"
+	position = 43564768
+
+	DBsource = "root:root123@tcp(10.40.6.89:3306)/test"
+	filename = "mysql-bin.000078"
+	position = 44125248
+
+	/*
+	DBsource = "root:root@tcp(10.40.2.41:3306)/test"
+	filename = "mysql-bin.000072"
+	position =
+	*/
+
+
 	reslut := make(chan error, 1)
 	m := make(map[string]uint8, 0)
+	m["bifrost_test"] = 1
 	m["mysql"] = 1
-	DataSource := "root:123456@tcp(45.40.207.2:3311)/mysql"
 	BinlogDump := &mysql.BinlogDump{
-		DataSource:    DataSource,
+		DataSource:    DBsource,
 		CallbackFun:   callback,
 		ReplicateDoDb: m,
-		OnlyEvent:     []mysql.EventType{
-			mysql.QUERY_EVENT,
-			mysql.WRITE_ROWS_EVENTv1, mysql.UPDATE_ROWS_EVENTv1, mysql.DELETE_ROWS_EVENTv1,
-			mysql.WRITE_ROWS_EVENTv2, mysql.UPDATE_ROWS_EVENTv2, mysql.DELETE_ROWS_EVENTv2,
-			mysql.WRITE_ROWS_EVENTv0, mysql.UPDATE_ROWS_EVENTv0, mysql.DELETE_ROWS_EVENTv0,
-			},
+		OnlyEvent:     []mysql.EventType{mysql.QUERY_EVENT, mysql.WRITE_ROWS_EVENTv1, mysql.UPDATE_ROWS_EVENTv1, mysql.DELETE_ROWS_EVENTv1,mysql.WRITE_ROWS_EVENTv2, mysql.UPDATE_ROWS_EVENTv2, mysql.DELETE_ROWS_EVENTv2},
 	}
 	go BinlogDump.StartDumpBinlog(filename, position, 100,reslut,"",0)
 	go func() {
-		v := <-reslut
-		log.Printf("monitor reslut:%s \r\n", v)
+		for {
+			v := <-reslut
+			log.Printf("monitor reslut:%s \r\n", v)
+		}
 	}()
+
 	for {
 		time.Sleep(10 * time.Second)
 	}
