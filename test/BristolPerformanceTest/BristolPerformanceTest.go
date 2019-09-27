@@ -3,12 +3,13 @@ package main
 import (
 	"time"
 	"log"
-	"github.com/jc3wish/Bristol/mysql"
+	"github.com/brokercap/Bristol/mysql"
 	"database/sql/driver"
 	"strings"
 	"strconv"
 	"os"
 	"flag"
+	"fmt"
 )
 
 
@@ -57,11 +58,11 @@ func(This *MySQLConn) GetBinLogInfo() MasterBinlogInfoStruct{
 		if errs != nil {
 			return MasterBinlogInfoStruct{}
 		}
-		File = string(dest[0].([]byte))
-		Binlog_Do_DB = string(dest[2].([]byte))
-		Binlog_Ignore_DB = string(dest[3].([]byte))
+		File = dest[0].(string)
+		Binlog_Do_DB = dest[2].(string)
+		Binlog_Ignore_DB = dest[3].(string)
 		Executed_Gtid_Set = ""
-		PositonString := string(dest[1].([]byte))
+		PositonString := fmt.Sprint(dest[1])
 		Position,_ = strconv.Atoi(PositonString)
 		break
 	}
@@ -98,7 +99,7 @@ func(This *MySQLConn) GetServerId() int{
 		if errs != nil{
 			return 0
 		}
-		ServerIdString := string(dest[1].([]byte))
+		ServerIdString := fmt.Sprint(dest[1])
 		ServerId,_ = strconv.Atoi(ServerIdString)
 		break
 	}
@@ -141,14 +142,19 @@ func GetSchemaTableFieldAndVal(db mysql.MysqlConnection,schema string,table stri
 			break
 		}
 		var fieldNAme, EXTRA string
-		EXTRA = string(dest[3].([]byte))
+		var defaultVal string
+		EXTRA = fmt.Sprint(dest[3])
 
 		if EXTRA == "auto_increment" {
 			continue
 		} else {
-			fieldType := string(dest[2].([]byte))
-			defaultVal := string(dest[1].([]byte))
-			COLUMN_TYPE := string(dest[4].([]byte))
+			fieldType := fmt.Sprint(dest[2])
+			if dest[1] == nil{
+				defaultVal = ""
+			}else{
+				defaultVal = fmt.Sprint(dest[1])
+			}
+			COLUMN_TYPE := fmt.Sprint(dest[4])
 			switch fieldType {
 			case "int", "tinyint", "smallint", "mediumint", "bigint":
 				var unsigned bool = false
@@ -241,7 +247,7 @@ func GetSchemaTableFieldAndVal(db mysql.MysqlConnection,schema string,table stri
 				break
 			}
 
-			fieldNAme = string(dest[0].([]byte))
+			fieldNAme = fmt.Sprint(dest[0])
 			if sqlk == "" {
 				sqlk = "`" + fieldNAme + "`"
 				sqlv = "?"
@@ -377,25 +383,29 @@ func main() {
 	MyServerID := uint32(MastSeverId+249)
 
 	reslut := make(chan error, 1)
-	m := make(map[string]uint8, 0)
-	m[Schema] = 1
-	BinlogDump := &mysql.BinlogDump{
-		DataSource:    DataSource,
-		CallbackFun:   callback,
-		ReplicateDoDb: m,
-		OnlyEvent:     []mysql.EventType{
-			mysql.WRITE_ROWS_EVENTv1,mysql.WRITE_ROWS_EVENTv2,mysql.WRITE_ROWS_EVENTv0,
-			mysql.UPDATE_ROWS_EVENTv0,mysql.UPDATE_ROWS_EVENTv1,mysql.UPDATE_ROWS_EVENTv2,
-			mysql.DELETE_ROWS_EVENTv0,mysql.DELETE_ROWS_EVENTv1,mysql.DELETE_ROWS_EVENTv2,
-			},
-	}
+	BinlogDump := mysql.NewBinlogDump(
+		DataSource,
+		callback,
+		[]mysql.EventType{
+			//mysql.QUERY_EVENT,
+			mysql.WRITE_ROWS_EVENTv1, mysql.UPDATE_ROWS_EVENTv1, mysql.DELETE_ROWS_EVENTv1,
+			mysql.WRITE_ROWS_EVENTv0, mysql.UPDATE_ROWS_EVENTv0, mysql.DELETE_ROWS_EVENTv0,
+			mysql.WRITE_ROWS_EVENTv2, mysql.UPDATE_ROWS_EVENTv2, mysql.DELETE_ROWS_EVENTv2,
+		},
+		nil,
+		nil)
+	BinlogDump.AddReplicateDoDb(Schema,TableName)
+	log.Println("Schema:",Schema)
+	log.Println("TableName:",TableName)
 	log.Println("analysis binlog start")
 	log.Println("start binlog info:",filename,position)
 	StartTime = time.Now().Unix()
 	go BinlogDump.StartDumpBinlog(filename, position, MyServerID,reslut,"",0)
 	go func() {
-		v := <-reslut
-		log.Printf("monitor reslut:%s \r\n", v)
+		for {
+			v := <-reslut
+			log.Printf("monitor reslut:%s \r\n", v)
+		}
 	}()
 	for {
 		time.Sleep(10 * time.Second)

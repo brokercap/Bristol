@@ -78,6 +78,9 @@ func (parser *eventParser) parseEventRow(buf *bytes.Buffer, tableMap *TableMapEv
 	row = make(map[string]interface{})
 	bitfieldSize := (columnsCount + 7) / 8
 	nullBitMap := Bitfield(buf.Next(bitfieldSize))
+	if columnsCount > len(tableSchemaMap){
+		log.Println("parseEventRow len(tableSchemaMap)=",len(tableSchemaMap)," < ","columnsCount:",columnsCount," tableMap:",*tableMap)
+	}
 	for i := 0; i < columnsCount; i++ {
 		column_name := tableSchemaMap[i].COLUMN_NAME
 		//log.Println("column_name:",column_name,tableSchemaMap[i].DATA_TYPE)
@@ -518,14 +521,14 @@ func (parser *eventParser) parseEventRow(buf *bytes.Buffer, tableMap *TableMapEv
 
 		case FIELD_TYPE_TIMESTAMP:
 			timestamp := int64(bytesToUint32(buf.Next(4)))
-			tm := time.Unix(timestamp, 0).UTC()
+			tm := time.Unix(timestamp, 0)
 			row[column_name] = tm.Format(TIME_FORMAT)
 			break
 
 		case FIELD_TYPE_TIMESTAMP2:
 			var timestamp int32
 			binary.Read(buf,binary.BigEndian,&timestamp)
-			tm := time.Unix(int64(timestamp), 0).UTC()
+			tm := time.Unix(int64(timestamp), 0)
 			row[column_name] = tm.Format(TIME_FORMAT)
 			break
 

@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"github.com/jc3wish/Bristol/mysql"
+	"github.com/brokercap/Bristol/mysql"
 	"time"
 	"os"
 	"fmt"
@@ -15,7 +15,7 @@ import (
 	"encoding/json"
 )
 
-const VERSION  = "0.1.1"
+const VERSION  = "0.1.2"
 
 func DBConnect(uri string) mysql.MysqlConnection{
 	db := mysql.NewConnect(uri)
@@ -56,11 +56,11 @@ func GetBinLogInfo(db mysql.MysqlConnection) MasterBinlogInfoStruct{
 		if errs != nil {
 			return MasterBinlogInfoStruct{}
 		}
-		File = string(dest[0].([]byte))
-		Binlog_Do_DB = string(dest[2].([]byte))
-		Binlog_Ignore_DB = string(dest[3].([]byte))
+		File = dest[0].(string)
+		Binlog_Do_DB = dest[2].(string)
+		Binlog_Ignore_DB = dest[3].(string)
 		Executed_Gtid_Set = ""
-		PositonString := string(dest[1].([]byte))
+		PositonString := fmt.Sprint(dest[1])
 		Position,_ = strconv.Atoi(PositonString)
 		break
 	}
@@ -96,7 +96,7 @@ func GetServerId(db mysql.MysqlConnection) int{
 		if errs != nil{
 			return 0
 		}
-		ServerIdString := string(dest[1].([]byte))
+		ServerIdString :=fmt.Sprint(dest[1])
 		ServerId,_ = strconv.Atoi(ServerIdString)
 		break
 	}
@@ -204,37 +204,37 @@ func GetSchemaTableFieldAndVal(db mysql.MysqlConnection,schema string,table stri
 		var CHARACTER_MAXIMUM_LENGTH int
 		var NUMERIC_PRECISION int
 
-		COLUMN_NAME = string(dest[0].([]byte))
-		COLUMN_KEY = string(dest[1].([]byte))
-		COLUMN_TYPE = string(dest[2].([]byte))
+		COLUMN_NAME = fmt.Sprint(dest[0])
+		COLUMN_KEY = fmt.Sprint(dest[1])
+		COLUMN_TYPE = fmt.Sprint(dest[2])
 		if dest[3] == nil{
 			CHARACTER_SET_NAME = "NULL"
 		}else{
-			CHARACTER_SET_NAME = string(dest[3].([]byte))
+			CHARACTER_SET_NAME = fmt.Sprint(dest[3])
 		}
 
 		if dest[4] == nil{
 			COLLATION_NAME = "NULL"
 		}else{
-			COLLATION_NAME = string(dest[4].([]byte))
+			COLLATION_NAME = fmt.Sprint(dest[4])
 		}
 
 		if dest[5] == nil{
 			NUMERIC_SCALE = int(0)
 		}else{
-			NUMERIC_SCALE,_ = strconv.Atoi(string(dest[5].([]byte)))
+			NUMERIC_SCALE,_ = strconv.Atoi(fmt.Sprint(dest[5]))
 		}
 
-		EXTRA = string(dest[6].([]byte))
+		EXTRA = fmt.Sprint(dest[6])
 
-		DATA_TYPE = string(dest[8].([]byte))
+		DATA_TYPE = fmt.Sprint(dest[8])
 
 		//bit类型这个地方比较特殊，不能直接转成string，并且当前只有 time,datetime 类型转换的时候会用到 默认值，这里不进行其他细节处理
 		if DATA_TYPE != "bit"{
 			if dest[7] == nil{
 				COLUMN_DEFAULT = "NULL"
 			}else{
-				COLUMN_DEFAULT = string(dest[7].([]byte))
+				COLUMN_DEFAULT = fmt.Sprint(dest[7])
 			}
 		}
 
@@ -272,13 +272,13 @@ func GetSchemaTableFieldAndVal(db mysql.MysqlConnection,schema string,table stri
 		if dest[9] == nil{
 			CHARACTER_MAXIMUM_LENGTH = int(0)
 		}else{
-			CHARACTER_MAXIMUM_LENGTH,_ = strconv.Atoi(string(dest[9].([]byte)))
+			CHARACTER_MAXIMUM_LENGTH,_ = strconv.Atoi(fmt.Sprint(dest[9]))
 		}
 
 		if dest[10] == nil{
 			NUMERIC_PRECISION = int(0)
 		}else{
-			NUMERIC_PRECISION,_ = strconv.Atoi(string(dest[10].([]byte)))
+			NUMERIC_PRECISION,_ = strconv.Atoi(fmt.Sprint(dest[10]))
 		}
 
 		columnType := &Column{
@@ -650,7 +650,7 @@ func main() {
 		if err != nil {
 			break
 		}
-		MysqlVersion = string(dest[0].([]byte))
+		MysqlVersion = fmt.Sprint(dest[0])
 		break
 	}
 
@@ -743,20 +743,20 @@ func main() {
 	ColumnData = tableInfo
 
 	reslut := make(chan error, 1)
-	m := make(map[string]uint8, 0)
-	m[*database] = 1
-	log.Println("m:",m)
-	BinlogDump := &mysql.BinlogDump{
-		DataSource:    dataSource,
-		CallbackFun:   callback3,
-		ReplicateDoDb: m,
-		OnlyEvent:     []mysql.EventType{
+	BinlogDump := mysql.NewBinlogDump(
+		dataSource,
+		callback3,
+		[]mysql.EventType{
 			mysql.QUERY_EVENT,
 			mysql.WRITE_ROWS_EVENTv1, mysql.UPDATE_ROWS_EVENTv1, mysql.DELETE_ROWS_EVENTv1,
 			mysql.WRITE_ROWS_EVENTv0, mysql.UPDATE_ROWS_EVENTv0, mysql.DELETE_ROWS_EVENTv0,
 			mysql.WRITE_ROWS_EVENTv2, mysql.UPDATE_ROWS_EVENTv2, mysql.DELETE_ROWS_EVENTv2,
 		},
-	}
+		nil,
+		nil)
+	BinlogDump.AddReplicateDoDb(*database,"binlog_field_test")
+	log.Println("Version:",VERSION)
+	log.Println("Bristol version:",mysql.VERSION)
 	log.Println("filename:",filename,"position:",position)
 	go BinlogDump.StartDumpBinlog(filename, position, MyServerID,reslut,"",0)
 	go func() {
